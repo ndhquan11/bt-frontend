@@ -13,6 +13,7 @@ export const ROUTES = {
   home: '/',
   login: '/login',
   register: '/register',
+  dashboard: '/teams', // redirect to teams as default dashboard
   teams: '/teams',
   matches: '/matches',
   profile: '/profile',

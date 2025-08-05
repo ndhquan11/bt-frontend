@@ -276,15 +276,7 @@ export default function LoginPage() {
                     Ghi nhớ email
                   </label>
                 </div>
-                <Link
-                  href="/forgot-password"
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  Quên mật khẩu?
-                </Link>
-              </div>
-
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              </div>              <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? (
                   <div className="flex items-center">
                     <svg
