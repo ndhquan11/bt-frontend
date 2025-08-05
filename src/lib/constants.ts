@@ -13,7 +13,6 @@ export const ROUTES = {
   home: '/',
   login: '/login',
   register: '/register',
-  dashboard: '/dashboard',
   teams: '/teams',
   matches: '/matches',
   profile: '/profile',

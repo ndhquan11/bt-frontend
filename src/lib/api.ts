@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
 
 class ApiClient {
   private baseURL: string
@@ -14,6 +14,7 @@ class ApiClient {
     const url = `${this.baseURL}${endpoint}`
 
     const config: RequestInit = {
+      credentials: 'include', //ư Include credentials for CORS
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,

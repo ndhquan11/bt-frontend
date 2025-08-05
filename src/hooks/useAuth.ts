@@ -52,7 +52,10 @@ export function useAuth(): UseAuthReturn {
       setIsLoading(true)
       const response = await apiClient.post<AuthResponse>('/auth/login', credentials)
 
-      localStorage.setItem(STORAGE_KEYS.authToken, response.token)
+      // Backend trả về access_token thay vì token
+      const token = response.access_token || response.token
+
+      localStorage.setItem(STORAGE_KEYS.authToken, token)
       localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(response.user))
       setUser(response.user)
     } catch (error) {
@@ -68,7 +71,10 @@ export function useAuth(): UseAuthReturn {
       setIsLoading(true)
       const response = await apiClient.post<AuthResponse>('/auth/register', data)
 
-      localStorage.setItem(STORAGE_KEYS.authToken, response.token)
+      // Backend trả về access_token thay vì token
+      const token = response.access_token || response.token
+
+      localStorage.setItem(STORAGE_KEYS.authToken, token)
       localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(response.user))
       setUser(response.user)
     } catch (error) {

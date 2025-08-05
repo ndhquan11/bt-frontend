@@ -12,8 +12,17 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({ className = "",
 
   return (
     <div className="space-y-2">
-      {label && <label className="text-sm font-semibold text-gray-700 block">{label}</label>}
-      <input className={`${baseClasses} ${errorClasses} ${className}`} ref={ref} {...props} />
+      {label && (
+        <label className="text-sm font-semibold text-gray-700 block">
+          {label}
+          {props.required && <span className="text-red-500 ml-1">*</span>}
+        </label>
+      )}
+      <input
+        className={`${baseClasses} ${errorClasses} ${className}`}
+        ref={ref}
+        {...props}
+      />
       {error && (
         <p className="text-sm text-red-600 flex items-center gap-1">
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

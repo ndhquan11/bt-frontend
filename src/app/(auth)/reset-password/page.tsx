@@ -2,86 +2,71 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { useAuth } from "@/hooks/useAuth"
 import { Button } from "@/components/ui/Button"
 import { Input } from "@/components/ui/Input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card"
 import { PasswordStrengthIndicator } from "@/components/ui/PasswordStrengthIndicator"
 import { useToast } from "@/components/ui/Toast"
 import { ROUTES, VALIDATION } from "@/lib/constants"
+import { apiClient } from "@/lib/api"
 
-export default function RegisterPage() {
+function ResetPasswordForm() {
   const [formData, setFormData] = useState({
-    name: "",
-    email: "",
     password: "",
     confirmPassword: "",
-    phone: "",
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [success, setSuccess] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const [isTokenValid, setIsTokenValid] = useState<boolean | null>(null)
 
-  const { register } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { showToast, ToastContainer } = useToast()
 
-  // Real-time validation
-  useEffect(() => {
-    if (Object.keys(touched).length > 0) {
-      validateForm(false)
-    }
-  }, [formData]) // eslint-disable-next-line react-hooks/exhaustive-deps
+  const token = searchParams.get('token')
 
-  const validateForm = (showAllErrors = true) => {
+  useEffect(() => {
+    // Verify token when component mounts
+    const verifyToken = async () => {
+      if (!token) {
+        setIsTokenValid(false)
+        return
+      }
+
+      try {
+        await apiClient.post('/auth/verify-reset-token', { token })
+        setIsTokenValid(true)
+      } catch (err) {
+        setIsTokenValid(false)
+        showToast({
+          message: "Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn",
+          type: "error"
+        })
+      }
+    }
+
+    verifyToken()
+  }, [token, showToast])
+
+  const validateForm = () => {
     const newErrors: Record<string, string> = {}
 
-    // Name validation
-    if (showAllErrors || touched.name) {
-      if (!formData.name || formData.name.length < VALIDATION.name.minLength) {
-        newErrors.name = `Tên phải có ít nhất ${VALIDATION.name.minLength} ký tự`
-      }
+    if (!formData.password) {
+      newErrors.password = "Mật khẩu là bắt buộc"
+    } else if (!VALIDATION.password.pattern.test(formData.password)) {
+      newErrors.password = "Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường và số"
     }
 
-    // Email validation
-    if (showAllErrors || touched.email) {
-      if (!formData.email) {
-        newErrors.email = "Email là bắt buộc"
-      } else if (!VALIDATION.email.pattern.test(formData.email)) {
-        newErrors.email = "Email không hợp lệ"
-      }
-    }
-
-    // Password validation
-    if (showAllErrors || touched.password) {
-      if (!formData.password) {
-        newErrors.password = "Mật khẩu là bắt buộc"
-      } else if (!VALIDATION.password.pattern.test(formData.password)) {
-        newErrors.password = "Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường và số"
-      }
-    }
-
-    // Confirm password validation
-    if (showAllErrors || touched.confirmPassword) {
-      if (!formData.confirmPassword) {
-        newErrors.confirmPassword = "Xác nhận mật khẩu là bắt buộc"
-      } else if (formData.password !== formData.confirmPassword) {
-        newErrors.confirmPassword = "Mật khẩu xác nhận không khớp"
-      }
-    }
-
-    // Phone validation (optional)
-    if ((showAllErrors || touched.phone) && formData.phone) {
-      if (!VALIDATION.phone.pattern.test(formData.phone)) {
-        newErrors.phone = "Số điện thoại không hợp lệ (10-11 số)"
-      }
+    if (!formData.confirmPassword) {
+      newErrors.confirmPassword = "Xác nhận mật khẩu là bắt buộc"
+    } else if (formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = "Mật khẩu xác nhận không khớp"
     }
 
     setErrors(newErrors)
@@ -90,12 +75,11 @@ export default function RegisterPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-    setTouched((prev) => ({ ...prev, [name]: true }))
+    setFormData(prev => ({ ...prev, [name]: value }))
 
     // Clear specific error when user starts typing
     if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: "" }))
+      setErrors(prev => ({ ...prev, [name]: "" }))
     }
 
     // Clear general error
@@ -104,17 +88,12 @@ export default function RegisterPage() {
     }
   }
 
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    const { name } = e.target
-    setTouched((prev) => ({ ...prev, [name]: true }))
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!validateForm(true)) {
+    if (!validateForm()) {
       showToast({
-        message: "Vui lòng kiểm tra lại thông tin đã nhập",
+        message: "Vui lòng kiểm tra lại thông tin mật khẩu",
         type: "warning"
       })
       return
@@ -122,35 +101,29 @@ export default function RegisterPage() {
 
     setIsLoading(true)
     setError("")
-    setSuccess("")
 
     try {
-      await register({
-        name: formData.name.trim(),
-        email: formData.email.trim().toLowerCase(),
+      await apiClient.post('/auth/reset-password', {
+        token,
         password: formData.password,
-        phone: formData.phone.trim() || undefined,
       })
 
-      setSuccess("Đăng ký thành công! Đang chuyển hướng...")
       showToast({
-        message: "Đăng ký thành công! Chào mừng bạn đến với Badminton Teamup",
+        message: "Đặt lại mật khẩu thành công! Đang chuyển hướng...",
         type: "success"
       })
 
       // Delay redirect to show success message
       setTimeout(() => {
-        router.push(ROUTES.dashboard)
+        router.push(ROUTES.login)
       }, 2000)
 
     } catch (err) {
-      let errorMessage = "Đăng ký thất bại. Vui lòng thử lại."
+      let errorMessage = "Có lỗi xảy ra. Vui lòng thử lại."
 
       if (err instanceof Error) {
-        if (err.message.includes('email') || err.message.includes('Email')) {
-          errorMessage = "Email đã được sử dụng. Vui lòng sử dụng email khác."
-        } else if (err.message.includes('password') || err.message.includes('Password')) {
-          errorMessage = "Mật khẩu không đáp ứng yêu cầu bảo mật."
+        if (err.message.includes('token') || err.message.includes('expired')) {
+          errorMessage = "Link đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu link mới."
         } else {
           errorMessage = err.message
         }
@@ -166,43 +139,91 @@ export default function RegisterPage() {
     }
   }
 
+  if (isTokenValid === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Đang xác thực...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (isTokenValid === false) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 via-white to-red-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full">
+          <div className="text-center mb-8">
+            <div className="mx-auto w-16 h-16 bg-gradient-to-r from-red-600 to-red-700 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
+              <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  fillRule="evenodd"
+                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </div>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">Link không hợp lệ</h2>
+            <p className="text-gray-600">Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn</p>
+          </div>
+
+          <Card className="backdrop-blur-sm bg-white/80">
+            <CardContent className="pt-6 space-y-4">
+              <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+                <p className="text-sm text-red-800">
+                  Link đặt lại mật khẩu đã hết hạn hoặc không hợp lệ. Vui lòng yêu cầu link mới.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() => router.push('/forgot-password')}
+                >
+                  Yêu cầu link mới
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => router.push(ROUTES.login)}
+                >
+                  Quay lại đăng nhập
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+          <ToastContainer />
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 via-white to-green-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 via-white to-purple-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
-          <div className="mx-auto w-16 h-16 bg-gradient-to-r from-green-600 to-green-700 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-            <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
+          <div className="mx-auto w-16 h-16 bg-gradient-to-r from-purple-600 to-purple-700 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
+            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
           </div>
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Tạo tài khoản mới</h2>
-          <p className="text-gray-600">Tham gia cộng đồng Badminton Teamup ngay hôm nay</p>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Đặt lại mật khẩu</h2>
+          <p className="text-gray-600">Tạo mật khẩu mới cho tài khoản của bạn</p>
         </div>
 
         <Card className="backdrop-blur-sm bg-white/80">
           <CardHeader className="text-center">
-            <CardTitle>Đăng ký</CardTitle>
-            <CardDescription>Điền thông tin để tạo tài khoản mới</CardDescription>
+            <CardTitle>Mật khẩu mới</CardTitle>
+            <CardDescription>
+              Nhập mật khẩu mới và xác nhận để hoàn tất
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Success Message */}
-              {success && (
-                <div className="rounded-lg bg-green-50 border border-green-200 p-4">
-                  <div className="flex items-center">
-                    <svg className="w-5 h-5 text-green-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                      <path
-                        fillRule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    <p className="text-sm text-green-800">{success}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Error Message */}
               {error && (
                 <div className="rounded-lg bg-red-50 border border-red-200 p-4">
                   <div className="flex items-center">
@@ -218,56 +239,14 @@ export default function RegisterPage() {
                 </div>
               )}
 
-              <Input
-                label="Họ và tên"
-                name="name"
-                type="text"
-                value={formData.name}
-                onChange={handleChange}
-                onBlur={handleBlur}
-                error={errors.name}
-                required
-                placeholder="Nguyễn Văn A"
-                disabled={isLoading}
-                autoComplete="name"
-              />
-
-              <Input
-                label="Email"
-                name="email"
-                type="email"
-                value={formData.email}
-                onChange={handleChange}
-                onBlur={handleBlur}
-                error={errors.email}
-                required
-                placeholder="your@email.com"
-                disabled={isLoading}
-                autoComplete="email"
-              />
-
-              <Input
-                label="Số điện thoại (tùy chọn)"
-                name="phone"
-                type="tel"
-                value={formData.phone}
-                onChange={handleChange}
-                onBlur={handleBlur}
-                error={errors.phone}
-                placeholder="0123456789"
-                disabled={isLoading}
-                autoComplete="tel"
-              />
-
               <div>
                 <div className="relative">
                   <Input
-                    label="Mật khẩu"
+                    label="Mật khẩu mới"
                     name="password"
                     type={showPassword ? "text" : "password"}
                     value={formData.password}
                     onChange={handleChange}
-                    onBlur={handleBlur}
                     error={errors.password}
                     required
                     placeholder="••••••••"
@@ -299,12 +278,11 @@ export default function RegisterPage() {
 
               <div className="relative">
                 <Input
-                  label="Xác nhận mật khẩu"
+                  label="Xác nhận mật khẩu mới"
                   name="confirmPassword"
                   type={showConfirmPassword ? "text" : "password"}
                   value={formData.confirmPassword}
                   onChange={handleChange}
-                  onBlur={handleBlur}
                   error={errors.confirmPassword}
                   required
                   placeholder="••••••••"
@@ -355,35 +333,41 @@ export default function RegisterPage() {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       ></path>
                     </svg>
-                    Đang đăng ký...
+                    Đang cập nhật...
                   </div>
                 ) : (
-                  "Tạo tài khoản"
+                  "Đặt lại mật khẩu"
                 )}
               </Button>
             </form>
 
             <div className="mt-6 text-center">
-              <div className="relative mb-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-200" />
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-white text-gray-500">Hoặc</span>
-                </div>
-              </div>
-
-              <p className="text-sm text-gray-600">
-                Đã có tài khoản?{" "}
-                <Link href={ROUTES.login} className="font-medium text-blue-600 hover:text-blue-700">
-                  Đăng nhập ngay
-                </Link>
-              </p>
+              <Link
+                href={ROUTES.login}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+              >
+                Quay lại đăng nhập
+              </Link>
             </div>
           </CardContent>
         </Card>
         <ToastContainer />
       </div>
     </div>
+  )
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Đang tải...</p>
+        </div>
+      </div>
+    }>
+      <ResetPasswordForm />
+    </Suspense>
   )
 }

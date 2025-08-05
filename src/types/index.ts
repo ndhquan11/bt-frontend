@@ -95,5 +95,6 @@ export interface RegisterData {
 
 export interface AuthResponse {
   user: User
-  token: string
+  token?: string  // For backward compatibility
+  access_token?: string  // Backend returns this
 }
